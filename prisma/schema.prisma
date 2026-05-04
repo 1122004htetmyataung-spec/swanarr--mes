@@ -129,11 +129,12 @@ model Sale {
 }
 
 model SaleItem {
-  id          String @id @default(uuid())
-  saleId      String @map("sale_id")
-  inventoryId String @map("inventory_id")
+  id          String   @id @default(uuid())
+  saleId      String   @map("sale_id")
+  inventoryId String   @map("inventory_id")
   qty         Int
   price       Float
+  createdAt   DateTime @default(now()) @map("created_at")
 
   sale      Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
   inventory InventoryItem @relation(fields: [inventoryId], references: [id])
