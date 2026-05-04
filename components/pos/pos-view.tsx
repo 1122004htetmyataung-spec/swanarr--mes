@@ -1,13 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Loader2,
-  Minus,
-  Package,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { Loader as Loader2, Minus, Package, Plus, ShoppingCart, Trash2, X } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -114,6 +108,23 @@ export function PosView() {
   const clearCart = useCartStore((s) => s.clearCart);
 
   const [search, setSearch] = useState("");
+  const [cartOpen, setCartOpen] = useState(false);
+
+  // Auto-open cart when first item is added
+  const prevLineCount = useState(0);
+  useEffect(() => {
+    if (lines.length > prevLineCount[0] && lines.length === 1) {
+      setCartOpen(true);
+    }
+    prevLineCount[1](lines.length);
+  }, [lines.length]);
+
+  // Close cart when cleared after checkout
+  useEffect(() => {
+    if (lines.length === 0) {
+      setCartOpen(false);
+    }
+  }, [lines.length]);
 
   useEffect(() => {
     if (!user?.branchId) return;
@@ -199,169 +210,6 @@ export function PosView() {
     },
   });
 
-  const renderCartPanel = (
-    idPrefix: string,
-    opts?: { showHeading?: boolean }
-  ) => (
-    <div className="flex h-full flex-col gap-4">
-      {opts?.showHeading === false ? null : (
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-bold tracking-tight">Cart</h2>
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-            {lines.length}
-          </span>
-        </div>
-      )}
-
-      <div className="min-h-[120px] flex-1 space-y-2 overflow-y-auto pr-1">
-        {lines.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-border bg-muted/30 px-3 py-8 text-center text-sm text-muted-foreground">
-            No items
-          </p>
-        ) : (
-          lines.map((line) => {
-            const max = stockById.get(line.inventoryItemId) ?? line.qty;
-            return (
-              <div
-                key={line.inventoryItemId}
-                className="flex gap-2 rounded-2xl border border-white/60 bg-white/70 p-2 shadow-sm backdrop-blur-sm"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{line.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatMmk(line.unitPrice)} × {line.qty}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      className="size-8 rounded-xl"
-                      disabled={line.qty <= 1}
-                      onClick={() => updateQty(line.inventoryItemId, line.qty - 1)}
-                      aria-label="Decrease quantity"
-                    >
-                      <Minus className="size-4" />
-                    </Button>
-                    <span className="w-8 text-center text-sm font-semibold">{line.qty}</span>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      className="size-8 rounded-xl"
-                      disabled={line.qty >= max}
-                      onClick={() => updateQty(line.inventoryItemId, line.qty + 1)}
-                      aria-label="Increase quantity"
-                    >
-                      <Plus className="size-4" />
-                    </Button>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-destructive hover:bg-destructive/10"
-                    onClick={() => removeLine(line.inventoryItemId)}
-                  >
-                    <Trash2 className="mr-1 size-4" />
-                    Remove
-                  </Button>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      <div className="space-y-3 rounded-2xl border border-white/50 bg-white/60 p-3 backdrop-blur-sm">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div className="space-y-1">
-            <Label htmlFor={`${idPrefix}-discount`}>Discount</Label>
-            <Input
-              id={`${idPrefix}-discount`}
-              type="number"
-              min={0}
-              step={100}
-              value={discountAmount || ""}
-              onChange={(e) => setDiscountAmount(Number(e.target.value))}
-              className="rounded-xl bg-white/80"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor={`${idPrefix}-tax`}>Tax (%)</Label>
-            <Input
-              id={`${idPrefix}-tax`}
-              type="number"
-              min={0}
-              step={0.5}
-              value={taxPercent || ""}
-              onChange={(e) => setTaxPercent(Number(e.target.value))}
-              className="rounded-xl bg-white/80"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-1 text-sm">
-          <div className="flex justify-between text-muted-foreground">
-            <span>Subtotal</span>
-            <span>{formatMmk(totals.subtotal)}</span>
-          </div>
-          <div className="flex justify-between border-t border-border pt-2 text-base font-bold text-foreground">
-            <span>Total</span>
-            <span>{formatMmk(totals.grandTotal)}</span>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-2">
-            {PAYMENT_CHIPS.map(({ id, className }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setPaymentMethod(id)}
-                className={cn(
-                  "rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200",
-                  "hover:scale-105 active:scale-95",
-                  className,
-                  paymentMethod === id
-                    ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
-                    : "opacity-90 hover:opacity-100"
-                )}
-              >
-                {paymentLabel(locale, id)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <Button
-          type="button"
-          disabled={
-            lines.length === 0 || checkoutMutation.isPending || totals.grandTotal <= 0
-          }
-          className={cn(
-            "h-12 w-full rounded-2xl text-base font-semibold shadow-lg transition-all duration-200",
-            "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white",
-            "hover:from-emerald-500 hover:via-teal-500 hover:to-emerald-600 hover:shadow-xl",
-            "active:scale-95 disabled:opacity-50"
-          )}
-          onClick={() => checkoutMutation.mutate()}
-        >
-          {checkoutMutation.isPending ? (
-            <>
-              <Loader2 className="mr-2 size-5 animate-spin" aria-hidden />
-              Processing...
-            </>
-          ) : (
-            "Checkout"
-          )}
-        </Button>
-      </div>
-    </div>
-  );
-
   if (!user) return null;
 
   if (user.role === USER_ROLE.TECHNICIAN) {
@@ -370,7 +218,233 @@ export function PosView() {
 
   return (
     <div className="relative">
-      <div className="mx-auto grid max-w-[1400px] gap-4 md:grid-cols-[1fr_360px] md:items-start">
+      <div className="mx-auto max-w-[1400px]">
+        {/* Floating cart button */}
+        {lines.length > 0 && !cartOpen && (
+          <button
+            type="button"
+            onClick={() => setCartOpen(true)}
+            className={cn(
+              "fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-xl",
+              "bg-gradient-to-br from-primary to-primary/90 text-primary-foreground",
+              "transition-all duration-200 hover:scale-110 hover:shadow-2xl active:scale-95",
+              "md:bottom-8 md:right-8"
+            )}
+            aria-label="Open cart"
+          >
+            <ShoppingCart className="size-6" aria-hidden />
+            <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white shadow-md">
+              {lines.length}
+            </span>
+          </button>
+        )}
+
+        {/* Cart overlay backdrop */}
+        {cartOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity"
+            onClick={() => setCartOpen(false)}
+            aria-hidden
+          />
+        )}
+
+        {/* Cart drawer */}
+        <div
+          className={cn(
+            "fixed inset-y-0 right-0 z-50 w-full max-w-md transform transition-transform duration-300 ease-out",
+            cartOpen ? "translate-x-0" : "translate-x-full"
+          )}
+        >
+          <div className="flex h-full flex-col border-l border-white/50 bg-white/95 shadow-2xl backdrop-blur-md">
+            {/* Cart header */}
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div className="flex items-center gap-2">
+                <ShoppingCart className="size-5 text-primary" aria-hidden />
+                <h2 className="text-lg font-bold tracking-tight">Cart</h2>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                  {lines.length}
+                </span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="rounded-xl"
+                onClick={() => setCartOpen(false)}
+                aria-label="Close cart"
+              >
+                <X className="size-5" />
+              </Button>
+            </div>
+
+            {/* Cart items */}
+            <div className="flex-1 overflow-y-auto p-5">
+              {lines.length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-border bg-muted/30 px-3 py-8 text-center text-sm text-muted-foreground">
+                  No items in cart
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {lines.map((line) => {
+                    const max = stockById.get(line.inventoryItemId) ?? line.qty;
+                    return (
+                      <div
+                        key={line.inventoryItemId}
+                        className="flex gap-3 rounded-2xl border border-white/60 bg-white/70 p-3 shadow-sm backdrop-blur-sm"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">{line.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatMmk(line.unitPrice)} each
+                          </p>
+                          <p className="mt-1 text-sm font-bold text-primary">
+                            {formatMmk(line.unitPrice * line.qty)}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="outline"
+                              className="size-8 rounded-xl"
+                              disabled={line.qty <= 1}
+                              onClick={() => updateQty(line.inventoryItemId, line.qty - 1)}
+                              aria-label="Decrease quantity"
+                            >
+                              <Minus className="size-4" />
+                            </Button>
+                            <span className="w-8 text-center text-sm font-semibold">{line.qty}</span>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="outline"
+                              className="size-8 rounded-xl"
+                              disabled={line.qty >= max}
+                              onClick={() => updateQty(line.inventoryItemId, line.qty + 1)}
+                              aria-label="Increase quantity"
+                            >
+                              <Plus className="size-4" />
+                            </Button>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-destructive hover:bg-destructive/10"
+                            onClick={() => removeLine(line.inventoryItemId)}
+                          >
+                            <Trash2 className="mr-1 size-3.5" />
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Cart footer: discount, tax, total, payment, checkout */}
+            <div className="border-t border-border p-5 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label>Discount (Ks)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={100}
+                    value={discountAmount || ""}
+                    onChange={(e) => setDiscountAmount(Number(e.target.value))}
+                    className="rounded-xl bg-white/80"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Tax (%)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={taxPercent || ""}
+                    onChange={(e) => setTaxPercent(Number(e.target.value))}
+                    className="rounded-xl bg-white/80"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Subtotal</span>
+                  <span>{formatMmk(totals.subtotal)}</span>
+                </div>
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>After discount</span>
+                    <span>{formatMmk(totals.afterDiscount)}</span>
+                  </div>
+                )}
+                {taxPercent > 0 && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Tax ({taxPercent}%)</span>
+                    <span>{formatMmk(totals.taxAmount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-border pt-2 text-base font-bold text-foreground">
+                  <span>Total</span>
+                  <span>{formatMmk(totals.grandTotal)}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground">Payment method</Label>
+                <div className="flex flex-wrap gap-2">
+                  {PAYMENT_CHIPS.map(({ id, className }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setPaymentMethod(id)}
+                      className={cn(
+                        "rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200",
+                        "hover:scale-105 active:scale-95",
+                        className,
+                        paymentMethod === id
+                          ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                          : "opacity-90 hover:opacity-100"
+                      )}
+                    >
+                      {paymentLabel(locale, id)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                disabled={
+                  lines.length === 0 || checkoutMutation.isPending || totals.grandTotal <= 0
+                }
+                className={cn(
+                  "h-12 w-full rounded-2xl text-base font-semibold shadow-lg transition-all duration-200",
+                  "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white",
+                  "hover:from-emerald-500 hover:via-teal-500 hover:to-emerald-600 hover:shadow-xl",
+                  "active:scale-95 disabled:opacity-50"
+                )}
+                onClick={() => checkoutMutation.mutate()}
+              >
+                {checkoutMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 size-5 animate-spin" aria-hidden />
+                    Processing...
+                  </>
+                ) : (
+                  "Checkout"
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Product grid — full width since cart is hidden by default */}
         <div className="space-y-4">
           <Input
             placeholder="Search products..."
@@ -385,10 +459,10 @@ export function PosView() {
             </div>
           ) : filtered.length === 0 ? (
             <p className="rounded-3xl border border-dashed bg-muted/30 py-12 text-center text-sm text-muted-foreground">
-              {t.pos_no_products}
+              No products match this branch or search.
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filtered.map((row) => {
                 const inCart = lines.find((l) => l.inventoryItemId === row.id)?.qty ?? 0;
                 const canAdd = row.stockQty > inCart;
@@ -407,7 +481,7 @@ export function PosView() {
                           alt=""
                           fill
                           className="object-cover"
-                          sizes="(max-width: 768px) 100vw, 33vw"
+                          sizes="(max-width: 768px) 100vw, 25vw"
                           unoptimized
                         />
                       ) : (
@@ -418,6 +492,11 @@ export function PosView() {
                       <span className="absolute bottom-2 left-2 rounded-xl bg-black/55 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
                         {row.category.replace(/_/g, " ")}
                       </span>
+                      {inCart > 0 && (
+                        <span className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground shadow-md">
+                          {inCart}
+                        </span>
+                      )}
                     </div>
                     <CardContent className="space-y-2 p-4">
                       <div>
@@ -452,20 +531,7 @@ export function PosView() {
               })}
             </div>
           )}
-
-          <div className="rounded-3xl border border-white/50 bg-white/85 p-4 shadow-glass-lg backdrop-blur-md md:hidden">
-            {renderCartPanel("mob", { showHeading: false })}
-          </div>
         </div>
-
-        <aside
-          className={cn(
-            "sticky top-20 hidden max-h-[calc(100vh-6rem)] overflow-y-auto md:block",
-            "rounded-3xl border border-white/50 bg-white/85 p-4 shadow-glass-lg backdrop-blur-md"
-          )}
-        >
-          {renderCartPanel("desk")}
-        </aside>
       </div>
     </div>
   );
