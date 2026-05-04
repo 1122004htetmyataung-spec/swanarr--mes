@@ -1,9 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader as Loader2, Minus, Package, Plus, ShoppingCart, Trash2, X } from "lucide-react";
+import { Loader as Loader2, Minus, Package, Plus, ShoppingCart, Trash2, X, ChevronsRight, GripVertical } from "lucide-react";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -88,6 +88,25 @@ function computeTotals(
   return { subtotal, afterDiscount, taxAmount, grandTotal };
 }
 
+const CART_WIDTH_KEY = "pos-cart-width";
+const CART_COLLAPSED_KEY = "pos-cart-collapsed";
+const MIN_WIDTH = 260;
+const MAX_WIDTH = 480;
+const DEFAULT_WIDTH = 320;
+
+function loadCartWidth(): number {
+  if (typeof window === "undefined") return DEFAULT_WIDTH;
+  const saved = localStorage.getItem(CART_WIDTH_KEY);
+  if (!saved) return DEFAULT_WIDTH;
+  const n = Number(saved);
+  return Number.isFinite(n) && n >= MIN_WIDTH && n <= MAX_WIDTH ? n : DEFAULT_WIDTH;
+}
+
+function loadCartCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(CART_COLLAPSED_KEY) === "true";
+}
+
 export function PosView() {
   const locale = useLocaleStore((s) => s.locale);
   const user = useAuthStore((s) => s.user);
@@ -109,14 +128,29 @@ export function PosView() {
 
   const [search, setSearch] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
+  const [cartWidth, setCartWidth] = useState(DEFAULT_WIDTH);
+  const [collapsed, setCollapsed] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+
+  const resizingRef = useRef(false);
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(0);
+
+  // Hydrate from localStorage on mount
+  useEffect(() => {
+    setCartWidth(loadCartWidth());
+    setCollapsed(loadCartCollapsed());
+    setHydrated(true);
+  }, []);
 
   // Auto-open cart when first item is added
-  const prevLineCount = useState(0);
+  const prevLineCountRef = useRef(0);
   useEffect(() => {
-    if (lines.length > prevLineCount[0] && lines.length === 1) {
+    if (lines.length > prevLineCountRef.current && lines.length === 1) {
       setCartOpen(true);
+      setCollapsed(false);
     }
-    prevLineCount[1](lines.length);
+    prevLineCountRef.current = lines.length;
   }, [lines.length]);
 
   // Close cart when cleared after checkout
@@ -125,6 +159,18 @@ export function PosView() {
       setCartOpen(false);
     }
   }, [lines.length]);
+
+  // Persist width
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem(CART_WIDTH_KEY, String(cartWidth));
+  }, [cartWidth, hydrated]);
+
+  // Persist collapsed
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem(CART_COLLAPSED_KEY, String(collapsed));
+  }, [collapsed, hydrated]);
 
   useEffect(() => {
     if (!user?.branchId) return;
@@ -210,16 +256,67 @@ export function PosView() {
     },
   });
 
+  // Resize handlers
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      e.preventDefault();
+      resizingRef.current = true;
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+      startXRef.current = clientX;
+      startWidthRef.current = cartWidth;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [cartWidth]
+  );
+
+  useEffect(() => {
+    const handleMove = (clientX: number) => {
+      if (!resizingRef.current) return;
+      // Dragging left edge: moving left = wider, moving right = narrower
+      const delta = startXRef.current - clientX;
+      const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidthRef.current + delta));
+      setCartWidth(next);
+    };
+
+    const handleMouseMove = (e: MouseEvent) => handleMove(e.clientX);
+    const handleTouchMove = (e: TouchEvent) => handleMove(e.touches[0].clientX);
+
+    const handleUp = () => {
+      if (!resizingRef.current) return;
+      resizingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("touchmove", handleTouchMove);
+    window.addEventListener("mouseup", handleUp);
+    window.addEventListener("touchend", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("mouseup", handleUp);
+      window.removeEventListener("touchend", handleUp);
+    };
+  }, []);
+
+  const toggleCollapse = useCallback(() => {
+    setCollapsed((prev) => !prev);
+  }, []);
+
   if (!user) return null;
 
   if (user.role === USER_ROLE.TECHNICIAN) {
     return null;
   }
 
+  const drawerWidth = collapsed ? 48 : cartWidth;
+
   return (
     <div className="relative">
       <div className="mx-auto max-w-[1400px]">
-        {/* Floating cart button */}
+        {/* Floating cart button — only when cart is closed */}
         {lines.length > 0 && !cartOpen && (
           <button
             type="button"
@@ -240,9 +337,9 @@ export function PosView() {
         )}
 
         {/* Cart overlay backdrop */}
-        {cartOpen && (
+        {cartOpen && !collapsed && (
           <div
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity"
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-200"
             onClick={() => setCartOpen(false)}
             aria-hidden
           />
@@ -251,200 +348,250 @@ export function PosView() {
         {/* Cart drawer */}
         <div
           className={cn(
-            "fixed inset-y-0 right-0 z-50 w-full max-w-md transform transition-transform duration-300 ease-out",
+            "fixed inset-y-0 right-0 z-50 flex transition-all duration-200 ease-out",
             cartOpen ? "translate-x-0" : "translate-x-full"
           )}
+          style={{ width: drawerWidth }}
         >
-          <div className="flex h-full flex-col border-l border-white/50 bg-white/95 shadow-2xl backdrop-blur-md">
-            {/* Cart header */}
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div className="flex items-center gap-2">
-                <ShoppingCart className="size-5 text-primary" aria-hidden />
-                <h2 className="text-lg font-bold tracking-tight">Cart</h2>
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                  {lines.length}
-                </span>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="rounded-xl"
-                onClick={() => setCartOpen(false)}
-                aria-label="Close cart"
-              >
-                <X className="size-5" />
-              </Button>
+          {/* Resize handle on left edge */}
+          {cartOpen && !collapsed && (
+            <div
+              onMouseDown={handleResizeStart}
+              onTouchStart={handleResizeStart}
+              className={cn(
+                "group relative -left-1 top-0 z-10 flex w-3 cursor-col-resize items-center justify-center",
+                "hover:bg-primary/10 active:bg-primary/20"
+              )}
+            >
+              <GripVertical className="size-3 text-muted-foreground/50 transition-colors group-hover:text-primary" />
             </div>
+          )}
 
-            {/* Cart items */}
-            <div className="flex-1 overflow-y-auto p-5">
-              {lines.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-border bg-muted/30 px-3 py-8 text-center text-sm text-muted-foreground">
-                  No items in cart
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {lines.map((line) => {
-                    const max = stockById.get(line.inventoryItemId) ?? line.qty;
-                    return (
-                      <div
-                        key={line.inventoryItemId}
-                        className="flex gap-3 rounded-2xl border border-white/60 bg-white/70 p-3 shadow-sm backdrop-blur-sm"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold">{line.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatMmk(line.unitPrice)} each
-                          </p>
-                          <p className="mt-1 text-sm font-bold text-primary">
-                            {formatMmk(line.unitPrice * line.qty)}
-                          </p>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <div className="flex items-center gap-1">
+          {/* Collapsed tab */}
+          {cartOpen && collapsed && (
+            <button
+              type="button"
+              onClick={toggleCollapse}
+              className={cn(
+                "flex h-full w-full flex-col items-center gap-2 pt-4",
+                "bg-white/95 shadow-2xl backdrop-blur-md border-l border-white/50"
+              )}
+              aria-label="Expand cart"
+            >
+              <ShoppingCart className="size-5 text-primary" aria-hidden />
+              <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                {lines.length}
+              </span>
+              <ChevronsRight className="size-4 text-muted-foreground" />
+            </button>
+          )}
+
+          {/* Full cart panel */}
+          {cartOpen && !collapsed && (
+            <div className="flex h-full min-w-0 flex-1 flex-col border-l border-white/50 bg-white/95 shadow-2xl backdrop-blur-md">
+              {/* Cart header */}
+              <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="size-5 text-primary" aria-hidden />
+                  <h2 className="text-lg font-bold tracking-tight">Cart</h2>
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                    {lines.length}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 rounded-xl"
+                    onClick={toggleCollapse}
+                    aria-label="Collapse cart"
+                    title="Collapse cart"
+                  >
+                    <ChevronsRight className="size-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 rounded-xl"
+                    onClick={() => setCartOpen(false)}
+                    aria-label="Close cart"
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Cart items */}
+              <div className="flex-1 overflow-y-auto p-4">
+                {lines.length === 0 ? (
+                  <p className="rounded-2xl border border-dashed border-border bg-muted/30 px-3 py-8 text-center text-sm text-muted-foreground">
+                    No items in cart
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {lines.map((line) => {
+                      const max = stockById.get(line.inventoryItemId) ?? line.qty;
+                      return (
+                        <div
+                          key={line.inventoryItemId}
+                          className="flex gap-3 rounded-2xl border border-white/60 bg-white/70 p-3 shadow-sm backdrop-blur-sm"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold">{line.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatMmk(line.unitPrice)} each
+                            </p>
+                            <p className="mt-1 text-sm font-bold text-primary">
+                              {formatMmk(line.unitPrice * line.qty)}
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                className="size-8 rounded-xl"
+                                disabled={line.qty <= 1}
+                                onClick={() => updateQty(line.inventoryItemId, line.qty - 1)}
+                                aria-label="Decrease quantity"
+                              >
+                                <Minus className="size-4" />
+                              </Button>
+                              <span className="w-8 text-center text-sm font-semibold">{line.qty}</span>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                className="size-8 rounded-xl"
+                                disabled={line.qty >= max}
+                                onClick={() => updateQty(line.inventoryItemId, line.qty + 1)}
+                                aria-label="Increase quantity"
+                              >
+                                <Plus className="size-4" />
+                              </Button>
+                            </div>
                             <Button
                               type="button"
-                              size="icon"
-                              variant="outline"
-                              className="size-8 rounded-xl"
-                              disabled={line.qty <= 1}
-                              onClick={() => updateQty(line.inventoryItemId, line.qty - 1)}
-                              aria-label="Decrease quantity"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-destructive hover:bg-destructive/10"
+                              onClick={() => removeLine(line.inventoryItemId)}
                             >
-                              <Minus className="size-4" />
-                            </Button>
-                            <span className="w-8 text-center text-sm font-semibold">{line.qty}</span>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="outline"
-                              className="size-8 rounded-xl"
-                              disabled={line.qty >= max}
-                              onClick={() => updateQty(line.inventoryItemId, line.qty + 1)}
-                              aria-label="Increase quantity"
-                            >
-                              <Plus className="size-4" />
+                              <Trash2 className="mr-1 size-3.5" />
+                              Remove
                             </Button>
                           </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-destructive hover:bg-destructive/10"
-                            onClick={() => removeLine(line.inventoryItemId)}
-                          >
-                            <Trash2 className="mr-1 size-3.5" />
-                            Remove
-                          </Button>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Cart footer: discount, tax, total, payment, checkout */}
-            <div className="border-t border-border p-5 space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label>Discount (Ks)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={100}
-                    value={discountAmount || ""}
-                    onChange={(e) => setDiscountAmount(Number(e.target.value))}
-                    className="rounded-xl bg-white/80"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Tax (%)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    value={taxPercent || ""}
-                    onChange={(e) => setTaxPercent(Number(e.target.value))}
-                    className="rounded-xl bg-white/80"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Subtotal</span>
-                  <span>{formatMmk(totals.subtotal)}</span>
-                </div>
-                {discountAmount > 0 && (
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>After discount</span>
-                    <span>{formatMmk(totals.afterDiscount)}</span>
+                      );
+                    })}
                   </div>
                 )}
-                {taxPercent > 0 && (
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Tax ({taxPercent}%)</span>
-                    <span>{formatMmk(totals.taxAmount)}</span>
+              </div>
+
+              {/* Cart footer */}
+              <div className="border-t border-border p-4 space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label>Discount (Ks)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={discountAmount || ""}
+                      onChange={(e) => setDiscountAmount(Number(e.target.value))}
+                      className="rounded-xl bg-white/80"
+                    />
                   </div>
-                )}
-                <div className="flex justify-between border-t border-border pt-2 text-base font-bold text-foreground">
-                  <span>Total</span>
-                  <span>{formatMmk(totals.grandTotal)}</span>
+                  <div className="space-y-1">
+                    <Label>Tax (%)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      value={taxPercent || ""}
+                      onChange={(e) => setTaxPercent(Number(e.target.value))}
+                      className="rounded-xl bg-white/80"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-muted-foreground">Payment method</Label>
-                <div className="flex flex-wrap gap-2">
-                  {PAYMENT_CHIPS.map(({ id, className }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setPaymentMethod(id)}
-                      className={cn(
-                        "rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200",
-                        "hover:scale-105 active:scale-95",
-                        className,
-                        paymentMethod === id
-                          ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
-                          : "opacity-90 hover:opacity-100"
-                      )}
-                    >
-                      {paymentLabel(locale, id)}
-                    </button>
-                  ))}
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal</span>
+                    <span>{formatMmk(totals.subtotal)}</span>
+                  </div>
+                  {discountAmount > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>After discount</span>
+                      <span>{formatMmk(totals.afterDiscount)}</span>
+                    </div>
+                  )}
+                  {taxPercent > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Tax ({taxPercent}%)</span>
+                      <span>{formatMmk(totals.taxAmount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between border-t border-border pt-2 text-base font-bold text-foreground">
+                    <span>Total</span>
+                    <span>{formatMmk(totals.grandTotal)}</span>
+                  </div>
                 </div>
-              </div>
 
-              <Button
-                type="button"
-                disabled={
-                  lines.length === 0 || checkoutMutation.isPending || totals.grandTotal <= 0
-                }
-                className={cn(
-                  "h-12 w-full rounded-2xl text-base font-semibold shadow-lg transition-all duration-200",
-                  "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white",
-                  "hover:from-emerald-500 hover:via-teal-500 hover:to-emerald-600 hover:shadow-xl",
-                  "active:scale-95 disabled:opacity-50"
-                )}
-                onClick={() => checkoutMutation.mutate()}
-              >
-                {checkoutMutation.isPending ? (
-                  <>
-                    <Loader2 className="mr-2 size-5 animate-spin" aria-hidden />
-                    Processing...
-                  </>
-                ) : (
-                  "Checkout"
-                )}
-              </Button>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">Payment method</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {PAYMENT_CHIPS.map(({ id, className }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setPaymentMethod(id)}
+                        className={cn(
+                          "rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200",
+                          "hover:scale-105 active:scale-95",
+                          className,
+                          paymentMethod === id
+                            ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                            : "opacity-90 hover:opacity-100"
+                        )}
+                      >
+                        {paymentLabel(locale, id)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  disabled={
+                    lines.length === 0 || checkoutMutation.isPending || totals.grandTotal <= 0
+                  }
+                  className={cn(
+                    "h-12 w-full rounded-2xl text-base font-semibold shadow-lg transition-all duration-200",
+                    "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white",
+                    "hover:from-emerald-500 hover:via-teal-500 hover:to-emerald-600 hover:shadow-xl",
+                    "active:scale-95 disabled:opacity-50"
+                  )}
+                  onClick={() => checkoutMutation.mutate()}
+                >
+                  {checkoutMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 size-5 animate-spin" aria-hidden />
+                      Processing...
+                    </>
+                  ) : (
+                    "Checkout"
+                  )}
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Product grid — full width since cart is hidden by default */}
+        {/* Product grid */}
         <div className="space-y-4">
           <Input
             placeholder="Search products..."
