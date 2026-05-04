@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light canvas (gray-50 feel) + SwanAar brand */
+    --background: 210 20% 98%;
+    --foreground: 215 28% 17%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 28% 17%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 28% 17%;
+    --primary: 224 64% 33%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 214 32% 92%;
+    --secondary-foreground: 224 64% 26%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 214 32% 92%;
+    --accent-foreground: 224 64% 26%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 214 32% 90%;
+    --input: 214 32% 90%;
+    --ring: 224 64% 33%;
+    --radius: 1rem;
+    --chart-1: 224 64% 45%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+  }
+
+  .dark {
+    --background: 224 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 224 47% 14%;
+    --card-foreground: 210 40% 98%;
+    --popover: 224 47% 14%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 214 95% 68%;
+    --primary-foreground: 224 64% 15%;
+    --secondary: 217 33% 20%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 20%;
+    --muted-foreground: 215 20% 70%;
+    --accent: 217 33% 20%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 217 33% 22%;
+    --input: 217 33% 22%;
+    --ring: 214 95% 68%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer components {
+  /* Glassmorphism presets (use with rounded-2xl / rounded-3xl as needed) */
+  .glass-panel {
+    @apply rounded-3xl border border-white/50 bg-white/80 shadow-glass-lg backdrop-blur-md;
+  }
+
+  .glass-card {
+    @apply rounded-2xl border border-white/40 bg-white/80 shadow-glass backdrop-blur-sm;
+  }
+
+  .glass-subtle {
+    @apply rounded-2xl border border-white/30 bg-white/60 shadow-lg backdrop-blur-md;
+  }
+
+  /* Myanmar text blocks */
+  .font-mm {
+    font-family: var(--font-myanmar), Pyidaungsu, Padauk, system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

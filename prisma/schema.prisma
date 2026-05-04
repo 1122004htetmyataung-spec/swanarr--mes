@@ -1,0 +1,227 @@
+// SwanAar II Electronics MES — SQLite (see Developer_Handoff_Specification.md §6)
+// Categorical values are stored as String (UPPER_SNAKE); money as Float (MMK).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  name      String
+  location  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users            User[]
+  inventoryItems   InventoryItem[]
+  sales            Sale[]
+  serviceTickets   ServiceTicket[]
+  expenses         Expense[]
+  stockAdjustments StockAdjustment[]
+  appSetting       AppSetting?
+
+  @@map("branches")
+}
+
+model AppSetting {
+  id           String   @id @default(uuid())
+  branchId     String   @unique @map("branch_id")
+  shopName     String   @default("SwanAar II Electronics") @map("shop_name")
+  logoUrl      String?  @map("logo_url")
+  primaryColor String   @default("#1E3A8A") @map("primary_color")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@map("app_settings")
+}
+
+model User {
+  id               String   @id @default(uuid())
+  username         String   @unique
+  passwordHash     String   @map("password_hash")
+  /// OWNER | STAFF | TECHNICIAN
+  role             String
+  branchId         String   @map("branch_id")
+  commissionRate   Float?   @map("commission_rate")
+  baseSalary       Float?   @map("base_salary")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  branch             Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sales              Sale[]              @relation("SaleCreator")
+  expenses           Expense[]
+  assignedTickets    ServiceTicket[]     @relation("TicketTechnician")
+  stockAdjustments   StockAdjustment[]
+
+  @@index([branchId])
+  @@map("users")
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  name      String
+  address   String   @default("")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sales           Sale[]
+  serviceTickets  ServiceTicket[]
+
+  @@map("customers")
+}
+
+model InventoryItem {
+  id             String   @id @default(uuid())
+  branchId       String   @map("branch_id")
+  /// NEW_PHONE | USED_PHONE | USED_LAPTOP | CCTV | CCTV_ACC | OTHER
+  category       String
+  name           String
+  brand          String   @default("")
+  model          String   @default("")
+  imeiSerial     String?  @map("imei_serial")
+  stockQty       Int      @default(0) @map("stock_qty")
+  costPrice      Float    @map("cost_price")
+  salePrice      Float    @map("sale_price")
+  wholesalePrice Float    @default(0) @map("wholesale_price")
+  supplier       String   @default("")
+  imageUrl       String?  @map("image_url")
+  lastUpdated    DateTime @default(now()) @updatedAt @map("last_updated")
+
+  branch            Branch             @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  saleItems         SaleItem[]
+  stockAdjustments  StockAdjustment[]
+
+  @@index([branchId])
+  @@index([category])
+  @@map("inventory_items")
+}
+
+model Sale {
+  id             String   @id @default(uuid())
+  branchId       String   @map("branch_id")
+  customerId     String?  @map("customer_id")
+  userId         String   @map("user_id")
+  totalAmount    Float    @map("total_amount")
+  discount       Float    @default(0)
+  tax            Float    @default(0)
+  /// CASH | KBZPAY | WAVEPAY | AYAPAY | BANK | CREDIT
+  paymentMethod  String   @map("payment_method")
+  /// PAID | CREDIT
+  status         String   @default("PAID")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  branch     Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  customer   Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  user       User        @relation("SaleCreator", fields: [userId], references: [id])
+  saleItems  SaleItem[]
+
+  @@index([branchId])
+  @@index([createdAt])
+  @@map("sales")
+}
+
+model SaleItem {
+  id          String @id @default(uuid())
+  saleId      String @map("sale_id")
+  inventoryId String @map("inventory_id")
+  qty         Int
+  price       Float
+
+  sale      Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  inventory InventoryItem @relation(fields: [inventoryId], references: [id])
+
+  @@index([saleId])
+  @@map("sale_items")
+}
+
+model ServiceTicket {
+  id                      String    @id @default(uuid())
+  branchId                String    @map("branch_id")
+  customerId              String    @map("customer_id")
+  technicianId            String?   @map("technician_id")
+  /// PENDING | IN_PROGRESS | DONE | DELIVERED
+  status                  String    @default("PENDING")
+  description             String
+  deviceName              String?   @map("device_name")
+  deviceBrand             String?   @map("device_brand")
+  deviceModel             String?   @map("device_model")
+  /// FIXED | ESTIMATE
+  priceType               String    @map("price_type")
+  serviceCharge           Float     @default(0) @map("service_charge")
+  partsCost               Float     @default(0) @map("parts_cost")
+  warrantyTerms           String    @default("") @map("warranty_terms")
+  estimatedCompletionDate DateTime? @map("estimated_completion_date")
+  internalNotes           String    @default("") @map("internal_notes")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  branch       Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  customer     Customer       @relation(fields: [customerId], references: [id])
+  technician   User?          @relation("TicketTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
+  photos       TicketPhoto[]
+
+  @@index([branchId])
+  @@index([status])
+  @@map("service_tickets")
+}
+
+model TicketPhoto {
+  id         String   @id @default(uuid())
+  ticketId   String   @map("ticket_id")
+  imagePath  String   @map("image_path")
+  /// BEFORE | AFTER
+  photoType  String   @map("photo_type")
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+
+  ticket ServiceTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("ticket_photos")
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  branchId    String   @map("branch_id")
+  /// UTILITIES | SALARY | RENT | SUPPLIER | TRANSPORT | OTHER
+  category    String
+  amount      Float
+  description String
+  /// calendar day of expense (time ignored)
+  recordedOn  DateTime @map("date")
+  userId      String   @map("user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([branchId])
+  @@index([recordedOn])
+  @@map("expenses")
+}
+
+model StockAdjustment {
+  id          String   @id @default(uuid())
+  branchId    String   @map("branch_id")
+  inventoryId String   @map("inventory_id")
+  /// signed: negative = write-off / decrease
+  quantity    Int
+  reason      String
+  userId      String   @map("user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  branch    Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  inventory InventoryItem @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id])
+
+  @@index([branchId])
+  @@index([inventoryId])
+  @@map("stock_adjustments")
+}
