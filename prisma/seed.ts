@@ -152,6 +152,23 @@ async function main() {
     },
   });
 
+  // Create a MANAGER user for demonstration
+  const managerPasswordHash = await bcrypt.hash("manager123", 10);
+  await prisma.user.upsert({
+    where: { username: "manager" },
+    update: {
+      passwordHash: managerPasswordHash,
+      role: "MANAGER",
+      branchId: mandalay.id,
+    },
+    create: {
+      username: "manager",
+      passwordHash: managerPasswordHash,
+      role: "MANAGER",
+      branchId: mandalay.id,
+    },
+  });
+
   await prisma.appSetting.upsert({
     where: { branchId: mandalay.id },
     update: {},

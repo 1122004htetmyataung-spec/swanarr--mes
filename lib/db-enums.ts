@@ -1,6 +1,7 @@
 /** Valid DB string values (SQLite stores plain strings; use these in forms & APIs). */
 export const USER_ROLE = {
   OWNER: "OWNER",
+  MANAGER: "MANAGER",
   STAFF: "STAFF",
   TECHNICIAN: "TECHNICIAN",
 } as const;

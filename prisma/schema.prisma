@@ -23,6 +23,7 @@ model Branch {
   serviceTickets   ServiceTicket[]
   expenses         Expense[]
   stockAdjustments StockAdjustment[]
+  activityLogs     ActivityLog[]
   appSetting       AppSetting?
 
   @@map("branches")
@@ -44,23 +45,45 @@ model AppSetting {
 
 model User {
   id               String   @id @default(uuid())
+  
+  /// Authentication & Identity
   username         String   @unique
   passwordHash     String   @map("password_hash")
-  /// OWNER | STAFF | TECHNICIAN
+  email            String?
+  
+  /// Role-Based Access Control (OWNER | MANAGER | STAFF | TECHNICIAN)
   role             String
+  
+  /// Organization & Branch
   branchId         String   @map("branch_id")
-  commissionRate   Float?   @map("commission_rate")
+  
+  /// Compensation (optional, mainly for MANAGER/TECHNICIAN)
   baseSalary       Float?   @map("base_salary")
+  commissionRate   Float?   @map("commission_rate")
+  
+  /// Status & Activity Tracking
+  isActive         Boolean  @default(true) @map("is_active")
+  lastLoginAt      DateTime? @map("last_login_at")
+  lastActivityAt   DateTime? @map("last_activity_at")
+  
+  /// Timestamps
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
+  /// Relations
   branch             Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
   sales              Sale[]              @relation("SaleCreator")
   expenses           Expense[]
   assignedTickets    ServiceTicket[]     @relation("TicketTechnician")
   stockAdjustments   StockAdjustment[]
+  activityLogs       ActivityLog[]
 
+  /// Indexes for performance
   @@index([branchId])
+  @@index([role])
+  @@index([isActive])
+  @@index([createdAt])
+  @@unique([branchId, username])
   @@map("users")
 }
 
@@ -225,4 +248,21 @@ model StockAdjustment {
   @@index([branchId])
   @@index([inventoryId])
   @@map("stock_adjustments")
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  branchId  String   @map("branch_id")
+  action    String   /// e.g., "SALE_CREATED", "INVENTORY_UPDATED", "TICKET_CREATED"
+  details   String?  /// JSON payload or description of the action
+  timestamp DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([branchId])
+  @@index([timestamp])
+  @@map("activity_logs")
 }
