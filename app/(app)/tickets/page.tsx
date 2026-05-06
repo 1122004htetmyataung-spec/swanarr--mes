@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TICKET_STATUS } from "@/lib/db-enums";
-import { useAuthStore } from "@/stores/auth-store";
+import { useAuthUser } from "@/hooks/use-auth-user";
 
 type Ticket = {
   id: string;
@@ -55,7 +55,7 @@ async function createTicket(payload: Record<string, unknown>) {
 }
 
 export default function TicketsPage() {
-  const user = useAuthStore((s) => s.user);
+  const user = useAuthUser();
   const queryClient = useQueryClient();
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");

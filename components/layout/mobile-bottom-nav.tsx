@@ -2,15 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Users } from "lucide-react";
 
+import { useAuthUser } from "@/hooks/use-auth-user";
+import { USER_ROLE } from "@/lib/db-enums";
 import { cn } from "@/lib/utils";
 import { useShellStrings } from "@/lib/hooks/use-shell-strings";
 
-import { MAIN_NAV } from "./nav-config";
+import { MAIN_NAV, type NavItem } from "./nav-config";
 
 export function MobileBottomNav() {
   const pathname = usePathname();
   const t = useShellStrings();
+  const authUser = useAuthUser();
+
+  const ownerNav: NavItem[] =
+    authUser?.role === USER_ROLE.OWNER
+      ? [{ href: "/admin/users", labelKey: "nav_users", icon: Users }]
+      : [];
+
+  const navItems: NavItem[] = [...MAIN_NAV, ...ownerNav];
 
   return (
     <nav
@@ -20,7 +31,7 @@ export function MobileBottomNav() {
       )}
       aria-label="Mobile main"
     >
-      {MAIN_NAV.map(({ href, labelKey, icon: Icon }) => {
+      {navItems.map(({ href, labelKey, icon: Icon }) => {
         const active = pathname === href || pathname.startsWith(`${href}/`);
         return (
           <Link

@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { INVENTORY_CATEGORY } from "@/lib/db-enums";
 import { formatMmk } from "@/lib/format-mmk";
-import { useAuthStore } from "@/stores/auth-store";
+import { useAuthUser } from "@/hooks/use-auth-user";
 
 type Item = {
   id: string;
@@ -54,7 +54,7 @@ const EMPTY_FORM: InventoryForm = {
 };
 
 export default function InventoryPage() {
-  const user = useAuthStore((s) => s.user);
+  const user = useAuthUser();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<InventoryForm>(EMPTY_FORM);

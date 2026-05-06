@@ -16,7 +16,7 @@ import { PAYMENT_METHOD, USER_ROLE } from "@/lib/db-enums";
 import { formatMmk } from "@/lib/format-mmk";
 import { paymentLabel } from "@/lib/i18n/payments";
 import { cn } from "@/lib/utils";
-import { useAuthStore } from "@/stores/auth-store";
+import { useAuthUser } from "@/hooks/use-auth-user";
 import { useCartStore } from "@/stores/cart-store";
 import { useLocaleStore } from "@/stores/locale-store";
 
@@ -109,7 +109,7 @@ function loadCartCollapsed(): boolean {
 
 export function PosView() {
   const locale = useLocaleStore((s) => s.locale);
-  const user = useAuthStore((s) => s.user);
+  const user = useAuthUser();
   const queryClient = useQueryClient();
 
   const lines = useCartStore((s) => s.lines);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import { LogOut, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -13,17 +13,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuthUser } from "@/hooks/use-auth-user";
 import { useShellStrings } from "@/lib/hooks/use-shell-strings";
 import { cn } from "@/lib/utils";
-import { useAuthStore } from "@/stores/auth-store";
 import { useCartStore } from "@/stores/cart-store";
 import { useLocaleStore, type AppLocale } from "@/stores/locale-store";
 
 export function TopBar() {
-  const router = useRouter();
   const t = useShellStrings();
-  const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
+  const user = useAuthUser();
   const clearCart = useCartStore((s) => s.clearCart);
   const setCartBranch = useCartStore((s) => s.setBranchId);
   const locale = useLocaleStore((s) => s.locale);
@@ -129,11 +127,9 @@ export function TopBar() {
                 role="menuitem"
                 onClick={() => {
                   setMenuOpen(false);
-                  logout();
                   clearCart();
                   setCartBranch(null);
-                  router.push("/login");
-                  router.refresh();
+                  void signOut({ callbackUrl: "/login" });
                 }}
               >
                 <LogOut className="size-4" aria-hidden />

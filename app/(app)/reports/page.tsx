@@ -6,7 +6,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatMmk } from "@/lib/format-mmk";
-import { useAuthStore } from "@/stores/auth-store";
+import { useAuthUser } from "@/hooks/use-auth-user";
 import { useState } from "react";
 
 type ReportResponse = {
@@ -16,7 +16,7 @@ type ReportResponse = {
 };
 
 export default function ReportsPage() {
-  const user = useAuthStore((s) => s.user);
+  const user = useAuthUser();
   const [from, setFrom] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 6);

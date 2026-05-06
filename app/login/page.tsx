@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Cpu, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { useAuthStore, type AuthUser } from "@/stores/auth-store";
 import { useCartStore } from "@/stores/cart-store";
 
 type BranchRow = { id: string; name: string; location: string };
@@ -40,23 +40,18 @@ async function postLogin(payload: {
   username: string;
   password: string;
   branchId: string;
-}): Promise<{ user: AuthUser }> {
-  const res = await fetch("/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+}): Promise<void> {
+  const res = await signIn("credentials", {
+    ...payload,
+    redirect: false,
   });
-  const data = (await res.json()) as { error?: string; user?: AuthUser };
-  if (!res.ok) {
-    throw new Error(data.error ?? "Login failed");
+  if (res?.error) {
+    throw new Error("Invalid username, password, or branch.");
   }
-  if (!data.user) throw new Error("Login failed");
-  return { user: data.user };
 }
 
 export default function LoginPage() {
   const router = useRouter();
-  const setUser = useAuthStore((s) => s.setUser);
   const setCartBranch = useCartStore((s) => s.setBranchId);
 
   const [branchId, setBranchId] = useState<string>("");
@@ -76,9 +71,8 @@ export default function LoginPage() {
 
   const loginMutation = useMutation({
     mutationFn: postLogin,
-    onSuccess: ({ user }) => {
-      setUser(user);
-      setCartBranch(user.branchId);
+    onSuccess: async (_, variables) => {
+      setCartBranch(variables.branchId);
       router.push("/dashboard");
       router.refresh();
     },

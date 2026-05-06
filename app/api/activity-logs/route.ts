@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { prisma } from "@/lib/prisma";
+import { requireOwner } from "@/lib/require-owner";
 
 export async function GET(req: NextRequest) {
+  const gate = await requireOwner();
+  if (!gate.ok) return gate.response;
+
   try {
     const { searchParams } = new URL(req.url);
     const limit = parseInt(searchParams.get("limit") || "50");

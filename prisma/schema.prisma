@@ -45,15 +45,20 @@ model AppSetting {
 
 model User {
   id               String   @id @default(uuid())
-  
+
+  /// NextAuth profile (optional for credentials-only users)
+  name             String?
+  email            String?   @unique
+  emailVerified    DateTime? @map("email_verified")
+  image            String?
+
   /// Authentication & Identity
   username         String   @unique
   passwordHash     String   @map("password_hash")
-  email            String?
-  
+
   /// Role-Based Access Control (OWNER | MANAGER | STAFF | TECHNICIAN)
   role             String
-  
+
   /// Organization & Branch
   branchId         String   @map("branch_id")
   
@@ -78,6 +83,10 @@ model User {
   stockAdjustments   StockAdjustment[]
   activityLogs       ActivityLog[]
 
+  accounts           Account[]
+  sessions           Session[]
+  authenticators     Authenticator[]
+
   /// Indexes for performance
   @@index([branchId])
   @@index([role])
@@ -85,6 +94,61 @@ model User {
   @@index([createdAt])
   @@unique([branchId, username])
   @@map("users")
+}
+
+/// Auth.js — OAuth / adapter accounts (@auth/prisma-adapter)
+model Account {
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@map("accounts")
+}
+
+/// Auth.js — database sessions (optional when using JWT strategy)
+model Session {
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@id([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Authenticator {
+  credentialID         String  @unique @map("credential_id")
+  userId               String  @map("user_id")
+  providerAccountId    String  @map("provider_account_id")
+  credentialPublicKey  String  @map("credential_public_key")
+  counter              Int
+  credentialDeviceType String  @map("credential_device_type")
+  credentialBackedUp   Boolean @map("credential_backed_up")
+  transports           String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, credentialID])
+  @@map("authenticators")
 }
 
 model Customer {

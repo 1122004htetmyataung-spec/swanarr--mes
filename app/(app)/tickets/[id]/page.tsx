@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TICKET_STATUS } from "@/lib/db-enums";
-import { useAuthStore } from "@/stores/auth-store";
+import { useAuthUser } from "@/hooks/use-auth-user";
 
 type TicketDetail = {
   id: string;
@@ -36,7 +36,7 @@ async function fetchTicket(id: string, branchId: string): Promise<TicketDetail> 
 export default function TicketDetailPage() {
   const params = useParams<{ id: string }>();
   const ticketId = params.id;
-  const user = useAuthStore((s) => s.user);
+  const user = useAuthUser();
   const queryClient = useQueryClient();
   const [notes, setNotes] = useState("");
   const [estimatedDate, setEstimatedDate] = useState("");

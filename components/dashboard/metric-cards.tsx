@@ -19,7 +19,7 @@ import {
 import { formatMmk } from "@/lib/format-mmk";
 import { useShellStrings } from "@/lib/hooks/use-shell-strings";
 import { cn } from "@/lib/utils";
-import { useAuthStore } from "@/stores/auth-store";
+import { useAuthUser } from "@/hooks/use-auth-user";
 
 type Metric = {
   key: "metric_sales" | "metric_tickets" | "metric_stock" | "metric_profit";
@@ -56,7 +56,7 @@ async function fetchMetrics(branchId: string): Promise<DashboardMetrics> {
 
 export function DashboardMetricCards() {
   const t = useShellStrings();
-  const user = useAuthStore((s) => s.user);
+  const user = useAuthUser();
   const keys: Metric["key"][] = [
     "metric_sales",
     "metric_tickets",

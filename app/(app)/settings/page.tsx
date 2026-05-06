@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAuthStore } from "@/stores/auth-store";
+import { useAuthUser } from "@/hooks/use-auth-user";
 
 type Setting = {
   shopName: string;
@@ -16,7 +16,7 @@ type Setting = {
 };
 
 export default function SettingsPage() {
-  const user = useAuthStore((s) => s.user);
+  const user = useAuthUser();
   const queryClient = useQueryClient();
   const [shopName, setShopName] = useState("");
   const [primaryColor, setPrimaryColor] = useState("#1E3A8A");

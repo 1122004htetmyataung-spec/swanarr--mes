@@ -14,10 +14,10 @@ import {
 } from "@/components/ui/card";
 import { useShellStrings } from "@/lib/hooks/use-shell-strings";
 import { cn } from "@/lib/utils";
-import { useAuthStore } from "@/stores/auth-store";
+import { useAuthUser } from "@/hooks/use-auth-user";
 
 export default function DashboardPage() {
-  const user = useAuthStore((s) => s.user);
+  const user = useAuthUser();
   const t = useShellStrings();
 
   if (!user) return null;

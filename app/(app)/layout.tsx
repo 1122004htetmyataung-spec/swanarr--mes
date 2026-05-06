@@ -1,25 +1,30 @@
 "use client";
 
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { useHydrated } from "@/lib/use-hydrated";
-import { useAuthStore } from "@/stores/auth-store";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const hydrated = useHydrated();
-  const user = useAuthStore((s) => s.user);
+  const { status } = useSession();
 
   useEffect(() => {
-    if (!hydrated) return;
-    if (!user) {
+    if (status === "unauthenticated") {
       router.replace("/login");
     }
-  }, [hydrated, user, router]);
+  }, [status, router]);
 
-  if (!hydrated || !user) {
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
+
+  if (status === "unauthenticated") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <p className="text-sm text-muted-foreground">Loading…</p>
