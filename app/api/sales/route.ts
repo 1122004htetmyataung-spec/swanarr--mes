@@ -1,27 +1,43 @@
 import { NextResponse } from "next/server";
 
-import { PAYMENT_METHOD, SALE_STATUS, USER_ROLE } from "@/lib/db-enums";
+import { SALE_STATUS, USER_ROLE } from "@/lib/db-enums";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 type SaleItemInput = {
-  inventoryId: string;
+  // For bulk items (InventoryItem)
+  inventoryId?: string;
+  productInstanceId?: string; // For tracked items
   qty: number;
   price: number;
+};
+
+type PaymentInput = {
+  method: "CASH" | "KBZPAY" | "WAVEPAY" | "AYAPAY" | "BANK" | "CREDIT";
+  amount: number;
+  reference?: string;
 };
 
 type Body = {
   branchId?: string;
   userId?: string;
   customerId?: string | null;
-  paymentMethod?: string;
   discount?: number;
+  discountType?: "FIXED" | "PERCENTAGE";
   taxPercent?: number;
   items?: SaleItemInput[];
+  payments?: PaymentInput[];
 };
 
-const PAYMENT_VALUES = new Set(Object.values(PAYMENT_METHOD));
+const VALID_PAYMENT_METHODS = new Set([
+  "CASH",
+  "KBZPAY",
+  "WAVEPAY",
+  "AYAPAY",
+  "BANK",
+  "CREDIT",
+]);
 
 export async function POST(request: Request) {
   let body: Body;
@@ -33,32 +49,29 @@ export async function POST(request: Request) {
 
   const branchId = typeof body.branchId === "string" ? body.branchId.trim() : "";
   const userId = typeof body.userId === "string" ? body.userId.trim() : "";
-  const paymentMethod =
-    typeof body.paymentMethod === "string" ? body.paymentMethod.trim() : "";
   const discount =
     typeof body.discount === "number" && Number.isFinite(body.discount)
       ? Math.max(0, body.discount)
       : 0;
+  const discountType = body.discountType === "PERCENTAGE" ? "PERCENTAGE" : "FIXED";
   const taxPercent =
     typeof body.taxPercent === "number" && Number.isFinite(body.taxPercent)
       ? Math.max(0, body.taxPercent)
       : 0;
   const items = Array.isArray(body.items) ? body.items : [];
+  const payments = Array.isArray(body.payments) ? body.payments : [];
 
-  if (!branchId || !userId || !paymentMethod || items.length === 0) {
+  if (!branchId || !userId || items.length === 0) {
     return NextResponse.json(
-      { error: "branchId, userId, paymentMethod, and at least one line item are required." },
+      { error: "branchId, userId, and at least one line item are required." },
       { status: 400 }
     );
   }
 
-  if (!PAYMENT_VALUES.has(paymentMethod as (typeof PAYMENT_METHOD)[keyof typeof PAYMENT_METHOD])) {
-    return NextResponse.json({ error: "Invalid payment method." }, { status: 400 });
-  }
-
+  // Validate items
   for (const row of items) {
     if (
-      typeof row.inventoryId !== "string" ||
+      (typeof row.inventoryId !== "string" && typeof row.productInstanceId !== "string") ||
       typeof row.qty !== "number" ||
       typeof row.price !== "number" ||
       row.qty <= 0 ||
@@ -70,6 +83,21 @@ export async function POST(request: Request) {
     }
   }
 
+  // Validate payments
+  let totalPayments = 0;
+  for (const payment of payments) {
+    if (
+      !VALID_PAYMENT_METHODS.has(payment.method) ||
+      typeof payment.amount !== "number" ||
+      payment.amount <= 0 ||
+      !Number.isFinite(payment.amount)
+    ) {
+      return NextResponse.json({ error: "Invalid payment entry." }, { status: 400 });
+    }
+    totalPayments += payment.amount;
+  }
+
+  // Verify user and permissions
   const user = await prisma.user.findUnique({
     where: { id: userId },
   });
@@ -94,79 +122,140 @@ export async function POST(request: Request) {
     }
   }
 
+  // Calculate totals
   const subtotal = items.reduce((sum, row) => sum + row.price * row.qty, 0);
-  const afterDiscount = Math.max(0, subtotal - discount);
+  const actualDiscount =
+    discountType === "PERCENTAGE" ? (subtotal * discount) / 100 : discount;
+  const afterDiscount = Math.max(0, subtotal - actualDiscount);
   const taxAmount = afterDiscount * (taxPercent / 100);
   const totalAmount = afterDiscount + taxAmount;
 
-  const inventoryIds = Array.from(
-    new Set(items.map((i) => i.inventoryId))
-  );
-  const stockRows = await prisma.inventoryItem.findMany({
-    where: { id: { in: inventoryIds }, branchId },
-    select: { id: true, stockQty: true },
-  });
-  const stockMap = new Map(stockRows.map((r) => [r.id, r.stockQty]));
-
-  const qtyNeeded = new Map<string, number>();
-  for (const row of items) {
-    qtyNeeded.set(row.inventoryId, (qtyNeeded.get(row.inventoryId) ?? 0) + row.qty);
+  // Verify total payments match sale total
+  if (payments.length > 0 && Math.abs(totalPayments - totalAmount) > 0.01) {
+    return NextResponse.json(
+      {
+        error: `Payment total (${totalPayments}) must equal sale total (${totalAmount})`,
+      },
+      { status: 400 }
+    );
   }
 
-  for (const [invId, need] of Array.from(qtyNeeded.entries())) {
-    const available = stockMap.get(invId);
-    if (available === undefined || available < need) {
-      return NextResponse.json({ error: "Insufficient stock." }, { status: 409 });
-    }
+  // Determine sale status based on payment method (if single payment)
+  let saleStatus = SALE_STATUS.PAID;
+  if (payments.length === 0) {
+    saleStatus = SALE_STATUS.CREDIT;
+  } else if (
+    payments.length === 1 &&
+    payments[0].method === "CREDIT"
+  ) {
+    saleStatus = SALE_STATUS.CREDIT;
   }
-
-  const saleStatus =
-    paymentMethod === PAYMENT_METHOD.CREDIT ? SALE_STATUS.CREDIT : SALE_STATUS.PAID;
 
   try {
     const sale = await prisma.$transaction(async (tx) => {
+      // Create sale
       const created = await tx.sale.create({
         data: {
           branchId,
           customerId,
           userId,
           totalAmount,
-          discount,
+          discount: actualDiscount,
           tax: taxAmount,
-          paymentMethod,
           status: saleStatus,
-          saleItems: {
-            create: items.map((row) => ({
-              inventoryId: row.inventoryId,
-              qty: row.qty,
-              price: row.price,
-            })),
-          },
         },
       });
 
-      for (const [inventoryId, qty] of Array.from(qtyNeeded.entries())) {
-        await tx.inventoryItem.update({
-          where: { id: inventoryId },
-          data: { stockQty: { decrement: qty } },
+      // Process sale items and update inventory/instances
+      for (const item of items) {
+        // Create sale item
+        await tx.saleItem.create({
+          data: {
+            saleId: created.id,
+            inventoryId: item.inventoryId || "",
+            qty: item.qty,
+            price: item.price,
+          },
+        });
+
+        // Update bulk inventory stock
+        if (item.inventoryId) {
+          await tx.inventoryItem.update({
+            where: { id: item.inventoryId },
+            data: { stockQty: { decrement: item.qty } },
+          });
+        }
+
+        // Update ProductInstance status to SOLD
+        if (item.productInstanceId) {
+          await tx.productInstance.update({
+            where: { id: item.productInstanceId },
+            data: { status: "SOLD" },
+          });
+        }
+      }
+
+      // Create payment entries for split payments
+      for (const payment of payments) {
+        await tx.payment.create({
+          data: {
+            saleId: created.id,
+            method: payment.method,
+            amount: payment.amount,
+            reference: payment.reference || "",
+          },
         });
       }
+
+      // Log to activity log
+      await tx.activityLog.create({
+        data: {
+          userId,
+          branchId,
+          action: "SALE_CREATED",
+          details: JSON.stringify({
+            saleId: created.id,
+            itemCount: items.length,
+            totalAmount,
+            paymentCount: payments.length,
+          }),
+        },
+      });
+
+      // Create audit log for sale
+      await tx.auditLog.create({
+        data: {
+          userId,
+          branchId,
+          action: "SALE_CREATED",
+          entityType: "SALE",
+          entityId: created.id,
+          newValue: JSON.stringify({
+            totalAmount,
+            discount: actualDiscount,
+            tax: taxAmount,
+            itemCount: items.length,
+          }),
+          context: `Sale created for ${items.length} items totaling ₹${totalAmount}`,
+        },
+      });
 
       return created;
     });
 
     return NextResponse.json({
+      success: true,
       sale: {
         id: sale.id,
         totalAmount: sale.totalAmount,
         discount: sale.discount,
         tax: sale.tax,
-        paymentMethod: sale.paymentMethod,
         status: sale.status,
         createdAt: sale.createdAt.toISOString(),
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("Sale creation error:", error);
     return NextResponse.json({ error: "Could not save sale." }, { status: 500 });
   }
 }

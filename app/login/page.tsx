@@ -1,20 +1,13 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Cpu, Loader2 } from "lucide-react";
+import { Loader2, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -25,7 +18,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { useCartStore } from "@/stores/cart-store";
 
 type BranchRow = { id: string; name: string; location: string };
 
@@ -36,27 +28,13 @@ async function fetchBranches(): Promise<BranchRow[]> {
   return data.branches;
 }
 
-async function postLogin(payload: {
-  username: string;
-  password: string;
-  branchId: string;
-}): Promise<void> {
-  const res = await signIn("credentials", {
-    ...payload,
-    redirect: false,
-  });
-  if (res?.error) {
-    throw new Error("Invalid username, password, or branch.");
-  }
-}
-
 export default function LoginPage() {
   const router = useRouter();
-  const setCartBranch = useCartStore((s) => s.setBranchId);
-
   const [branchId, setBranchId] = useState<string>("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const { data: branches = [], isLoading: branchesLoading } = useQuery({
     queryKey: ["branches"],
@@ -70,62 +48,69 @@ export default function LoginPage() {
   }, [branches, branchId]);
 
   const loginMutation = useMutation({
-    mutationFn: postLogin,
-    onSuccess: async (_, variables) => {
-      setCartBranch(variables.branchId);
+    mutationFn: async () => {
+      const result = await signIn("credentials", {
+        redirect: false,
+        username,
+        password,
+        branchId,
+      });
+
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+    },
+    onSuccess: () => {
       router.push("/dashboard");
-      router.refresh();
     },
   });
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const isUsernameValid = username.trim().length > 0;
+    const isPasswordValid = password.length >= 8;
+
+    setUsernameError(isUsernameValid ? null : "Please enter a username.");
+    setPasswordError(
+      isPasswordValid ? null : "Password must be at least 8 characters."
+    );
+
+    if (!isUsernameValid || !isPasswordValid || !branchId) {
+      return;
+    }
+
+    loginMutation.mutate();
+  };
 
   const errorMessage =
     loginMutation.error instanceof Error
       ? loginMutation.error.message
       : loginMutation.isError
-        ? "Login failed"
-        : null;
+      ? "Login failed. Check your credentials."
+      : null;
 
   return (
-    <div
-      className={cn(
-        "relative flex min-h-screen items-center justify-center overflow-hidden p-4",
-        "bg-gradient-to-br from-slate-100 via-blue-50/60 to-slate-200"
-      )}
-    >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_20%_0%,rgba(30,58,138,0.18),transparent_50%),radial-gradient(ellipse_at_80%_100%,rgba(220,38,38,0.08),transparent_45%)]"
-      />
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#1a1b2e] px-4 py-10 text-slate-50">
+      {/* Background Abstract Shapes */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-[10%] -left-[10%] h-[60%] w-[60%] rounded-full bg-[#252644] opacity-50 blur-3xl" />
+        <div className="absolute top-[20%] -right-[10%] h-[70%] w-[70%] rotate-12 rounded-[100px] bg-[#2a2b4d] opacity-40" />
+        <div className="absolute -bottom-[20%] left-[20%] h-[50%] w-[80%] -rotate-12 rounded-[100px] bg-[#232441] opacity-30" />
+      </div>
 
-      <Card
-        className={cn(
-          "relative z-10 w-full max-w-md animate-fade-in border-white/50 shadow-glass-lg",
-          "rounded-3xl bg-white/80 backdrop-blur-md"
-        )}
-      >
-        <CardHeader className="space-y-3 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/85 text-primary-foreground shadow-lg shadow-primary/30">
-            <Cpu className="h-8 w-8" aria-hidden />
-          </div>
-          <CardTitle className="font-sans text-2xl font-bold tracking-tight text-foreground">
-            SwanAar II Electronics
-          </CardTitle>
-          <CardDescription className="font-mm text-sm text-muted-foreground">
-            စီမံခန့်ခွဲမှု နှင့် ဝန်ဆောင်မှု စနစ် · MES login
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!branchId) return;
-              loginMutation.mutate({ username, password, branchId });
-            }}
-          >
+      <div className="relative z-10 flex w-full max-w-md flex-col items-center gap-8">
+        {/* Logo */}
+        <div className="mb-4">
+          <h1 className="text-5xl font-bold tracking-tight text-white">Swanarr2</h1>
+        </div>
+
+        {/* Login Card */}
+        <div className="w-full rounded-2xl bg-[#252644]/80 p-8 shadow-2xl backdrop-blur-sm border border-white/5">
+          <form className="space-y-6" onSubmit={handleSubmit}>
             <div className="space-y-2">
-              <Label htmlFor="branch" className="text-sm font-medium">
-                Branch / ဆိုင်ခွဲ
+              <Label htmlFor="branch" className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">
+                Branch
               </Label>
               <Select
                 value={branchId}
@@ -134,7 +119,7 @@ export default function LoginPage() {
               >
                 <SelectTrigger
                   id="branch"
-                  className="h-11 rounded-2xl border-input bg-white/70 shadow-md backdrop-blur-sm"
+                  className="h-14 rounded-xl border-none bg-[#34355a] text-white placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-white/20"
                 >
                   <SelectValue
                     placeholder={
@@ -142,7 +127,7 @@ export default function LoginPage() {
                     }
                   />
                 </SelectTrigger>
-                <SelectContent className="rounded-2xl">
+                <SelectContent className="rounded-xl">
                   {branches.map((b) => (
                     <SelectItem key={b.id} value={b.id} className="rounded-xl">
                       {b.name} — {b.location}
@@ -153,77 +138,72 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="username" className="text-sm font-medium">
+              <Label htmlFor="username" className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">
                 Username
               </Label>
               <Input
                 id="username"
-                name="username"
+                type="text"
                 autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="h-11 rounded-2xl border-input bg-white/70 shadow-md backdrop-blur-sm"
                 placeholder="owner"
-                required
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                className="h-14 rounded-xl border-none bg-[#34355a] text-white placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-white/20"
               />
+              {usernameError ? <p className="text-xs text-rose-400 ml-1">{usernameError}</p > : null}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium">
+              <Label htmlFor="password" className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">
                 Password
               </Label>
               <Input
                 id="password"
-                name="password"
                 type="password"
                 autoComplete="current-password"
+                placeholder="PASSWORD"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="h-11 rounded-2xl border-input bg-white/70 shadow-md backdrop-blur-sm"
-                placeholder="••••••••••••"
-                required
+                onChange={(event) => setPassword(event.target.value)}
+                className="h-14 rounded-xl border-none bg-[#34355a] text-white placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-white/20"
               />
+              {passwordError ? <p className="text-xs text-rose-400 ml-1">{passwordError}</p > : null}
             </div>
 
             {errorMessage ? (
-              <p
-                className="rounded-2xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive"
-                role="alert"
-              >
+              <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-xs text-rose-100">
                 {errorMessage}
-              </p>
+              </div>
             ) : null}
 
-            <Button
-              type="submit"
-              className="h-12 w-full rounded-2xl text-base shadow-lg"
-              disabled={loginMutation.isPending || !branchId}
-            >
-              {loginMutation.isPending ? (
-                <>
-                  <Loader2 className="size-5 animate-spin" aria-hidden />
-                  Signing in…
-                </>
-              ) : (
-                "Sign in"
-              )}
-            </Button>
+            <div className="flex justify-center pt-2">
+              <Button
+                type="submit"
+                className={cn(
+                  "h-12 w-40 rounded-full bg-white px-6 text-sm font-bold uppercase tracking-widest text-[#1a1b2e] hover:bg-slate-200 transition-all duration-200",
+                  loginMutation.isPending ? "cursor-wait opacity-80" : ""
+                )}
+                disabled={loginMutation.isPending || !branchId}
+              >
+                {loginMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <span className="flex items-center gap-2">
+                    Log In <ArrowRight className="h-4 w-4" />
+                  </span>
+                )}
+              </Button>
+            </div>
           </form>
+        </div>
 
-          <p className="mt-4 text-center text-xs text-muted-foreground">
-            Demo: user <code className="rounded bg-muted px-1">owner</code> on{" "}
-            <strong>Mandalay</strong> — password from seed (
-            <code className="rounded bg-muted px-1">owner123</code>).
-          </p>
-        </CardContent>
-      </Card>
-
-      <Link
-        href="/"
-        className="absolute bottom-4 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
-      >
-        Back to home
-      </Link>
+        {/* Footer Link */}
+        <Link 
+          href="#" 
+          className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 transition hover:text-white"
+        >
+          Forgot your password?
+        </Link>
+      </div>
     </div>
   );
 }

@@ -17,14 +17,17 @@ model Branch {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  users            User[]
-  inventoryItems   InventoryItem[]
-  sales            Sale[]
-  serviceTickets   ServiceTicket[]
-  expenses         Expense[]
-  stockAdjustments StockAdjustment[]
-  activityLogs     ActivityLog[]
-  appSetting       AppSetting?
+  users               User[]
+  inventoryItems      InventoryItem[]
+  productInstances    ProductInstance[]
+  sales               Sale[]
+  serviceTickets      ServiceTicket[]
+  expenses            Expense[]
+  stockAdjustments    StockAdjustment[]
+  activityLogs        ActivityLog[]
+  auditLogs           AuditLog[]
+  supplierTransactions SupplierTransaction[]
+  appSetting          AppSetting?
 
   @@map("branches")
 }
@@ -82,6 +85,8 @@ model User {
   assignedTickets    ServiceTicket[]     @relation("TicketTechnician")
   stockAdjustments   StockAdjustment[]
   activityLogs       ActivityLog[]
+  auditLogs          AuditLog[]          @relation("AuditLogs")
+  supplierTransactions SupplierTransaction[] @relation("SupplierTransactions")
 
   accounts           Account[]
   sessions           Session[]
@@ -165,6 +170,52 @@ model Customer {
   @@map("customers")
 }
 
+/// Product — Template/SKU definition (shared across branches)
+model Product {
+  id             String   @id @default(uuid())
+  /// NEW_PHONE | USED_PHONE | USED_LAPTOP | CCTV | CCTV_ACC | OTHER
+  category       String
+  name           String
+  brand          String   @default("")
+  model          String   @default("")
+  salePrice      Float    @map("sale_price")
+  wholesalePrice Float    @default(0) @map("wholesale_price")
+  imageUrl       String?  @map("image_url")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  instances ProductInstance[]
+
+  @@index([category])
+  @@map("products")
+}
+
+/// ProductInstance — Individual tracked item with serial/IMEI
+model ProductInstance {
+  id             String   @id @default(uuid())
+  productId      String   @map("product_id")
+  branchId       String   @map("branch_id")
+  /// Unique identifier: serial number, IMEI, or asset ID
+  serialNumber   String   @unique @map("serial_number")
+  /// IN_STOCK | SOLD | REPAIRING | DEFECTIVE
+  status         String   @default("IN_STOCK")
+  /// Purchase/acquisition price in MMK
+  purchasePrice  Float    @map("purchase_price")
+  costPrice      Float    @map("cost_price")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([branchId])
+  @@index([status])
+  @@index([serialNumber])
+  @@map("product_instances")
+}
+
+/// Legacy InventoryItem support (for backward compatibility during migration)
 model InventoryItem {
   id             String   @id @default(uuid())
   branchId       String   @map("branch_id")
@@ -178,13 +229,15 @@ model InventoryItem {
   costPrice      Float    @map("cost_price")
   salePrice      Float    @map("sale_price")
   wholesalePrice Float    @default(0) @map("wholesale_price")
-  supplier       String   @default("")
+  supplierId     String?  @map("supplier_id")
   imageUrl       String?  @map("image_url")
   lastUpdated    DateTime @default(now()) @updatedAt @map("last_updated")
 
   branch            Branch             @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  supplier          Supplier?          @relation("InventorySupplier", fields: [supplierId], references: [id], onDelete: SetNull)
   saleItems         SaleItem[]
   stockAdjustments  StockAdjustment[]
+  serviceTicketParts ServiceTicketPart[]
 
   @@index([branchId])
   @@index([category])
@@ -199,8 +252,6 @@ model Sale {
   totalAmount    Float    @map("total_amount")
   discount       Float    @default(0)
   tax            Float    @default(0)
-  /// CASH | KBZPAY | WAVEPAY | AYAPAY | BANK | CREDIT
-  paymentMethod  String   @map("payment_method")
   /// PAID | CREDIT
   status         String   @default("PAID")
   createdAt      DateTime @default(now()) @map("created_at")
@@ -209,10 +260,27 @@ model Sale {
   customer   Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
   user       User        @relation("SaleCreator", fields: [userId], references: [id])
   saleItems  SaleItem[]
+  payments   Payment[]
 
   @@index([branchId])
   @@index([createdAt])
   @@map("sales")
+}
+
+/// Payment — Individual payment entry for split payment support
+model Payment {
+  id             String   @id @default(uuid())
+  saleId         String   @map("sale_id")
+  /// CASH | KBZPAY | WAVEPAY | AYAPAY | BANK | CREDIT
+  method         String
+  amount         Float
+  reference      String?  @default("") /// e.g., transaction ID, check number
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@map("payments")
 }
 
 model SaleItem {
@@ -235,30 +303,75 @@ model ServiceTicket {
   branchId                String    @map("branch_id")
   customerId              String    @map("customer_id")
   technicianId            String?   @map("technician_id")
-  /// PENDING | IN_PROGRESS | DONE | DELIVERED
-  status                  String    @default("PENDING")
+  /// RECEIVED | DIAGNOSING | WAITING_FOR_PARTS | REPAIRING | READY | DELIVERED
+  status                  String    @default("RECEIVED")
   description             String
   deviceName              String?   @map("device_name")
   deviceBrand             String?   @map("device_brand")
   deviceModel             String?   @map("device_model")
+  deviceSerialNumber      String?   @map("device_serial_number")
   /// FIXED | ESTIMATE
   priceType               String    @map("price_type")
+  estimatedCost           Float     @default(0) @map("estimated_cost")
   serviceCharge           Float     @default(0) @map("service_charge")
   partsCost               Float     @default(0) @map("parts_cost")
+  totalCost               Float     @default(0) @map("total_cost")
   warrantyTerms           String    @default("") @map("warranty_terms")
   estimatedCompletionDate DateTime? @map("estimated_completion_date")
+  completionDate          DateTime? @map("completion_date")
   internalNotes           String    @default("") @map("internal_notes")
+  /// Customer signature as base64 data URL
+  customerSignature       String?   @map("customer_signature")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
 
-  branch       Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  customer     Customer       @relation(fields: [customerId], references: [id])
-  technician   User?          @relation("TicketTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
+  branch       Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  customer     Customer            @relation(fields: [customerId], references: [id])
+  technician   User?               @relation("TicketTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
   photos       TicketPhoto[]
+  parts        ServiceTicketPart[]
+  statusHistory ServiceTicketStatusHistory[]
 
   @@index([branchId])
+  @@index([customerId])
   @@index([status])
+  @@index([createdAt])
   @@map("service_tickets")
+}
+
+/// ServiceTicketPart — Links inventory items (spare parts) to service tickets
+model ServiceTicketPart {
+  id             String   @id @default(uuid())
+  ticketId       String   @map("ticket_id")
+  inventoryId    String   @map("inventory_id")
+  qty            Int
+  unitPrice      Float    @map("unit_price")
+  totalPrice     Float    @map("total_price")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  ticket    ServiceTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  inventory InventoryItem @relation(fields: [inventoryId], references: [id])
+
+  @@index([ticketId])
+  @@index([inventoryId])
+  @@map("service_ticket_parts")
+}
+
+/// ServiceTicketStatusHistory — Track status changes for audit trail
+model ServiceTicketStatusHistory {
+  id          String   @id @default(uuid())
+  ticketId    String   @map("ticket_id")
+  oldStatus   String   @map("old_status")
+  newStatus   String   @map("new_status")
+  changedBy   String?  @map("changed_by")
+  reason      String?
+  timestamp   DateTime @default(now())
+
+  ticket ServiceTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([timestamp])
+  @@map("service_ticket_status_history")
 }
 
 model TicketPhoto {
@@ -329,4 +442,80 @@ model ActivityLog {
   @@index([branchId])
   @@index([timestamp])
   @@map("activity_logs")
+}
+
+/// Audit Log — Structured tracking of sensitive actions (price changes, stock adjustments, etc.)
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  branchId   String   @map("branch_id")
+  /// PRICE_CHANGE | STOCK_ADJUSTMENT | SALE_VOID | SALE_CREATED | PRODUCT_INSTANCE_STATUS_CHANGE | PAYMENT_RECORDED
+  action     String
+  /// PRODUCT | PRODUCT_INSTANCE | SALE | STOCK_ADJUSTMENT | SUPPLIER_TRANSACTION
+  entityType String   @map("entity_type")
+  /// ID of the entity affected
+  entityId   String   @map("entity_id")
+  /// Previous value (JSON string for complex types)
+  oldValue   String?  @map("old_value")
+  /// New/current value (JSON string)
+  newValue   String?  @map("new_value")
+  /// Context (e.g., "Price changed from 150000 to 160000 MMK")
+  context    String?
+  timestamp  DateTime @default(now())
+
+  user   User    @relation("AuditLogs", fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([branchId])
+  @@index([entityType])
+  @@index([action])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+/// Supplier — Vendor/supplier information
+model Supplier {
+  id              String   @id @default(uuid())
+  name            String
+  contactPerson   String?  @map("contact_person")
+  phone           String?
+  email           String?
+  address         String   @default("")
+  paymentTerms    String?  @map("payment_terms") /// e.g., "NET_30", "COD", "PREPAID"
+  notes           String   @default("")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  transactions    SupplierTransaction[]
+  inventoryItems  InventoryItem[]       @relation("InventorySupplier")
+
+  @@map("suppliers")
+}
+
+/// SupplierTransaction — Purchase, payment, and debt tracking
+model SupplierTransaction {
+  id          String   @id @default(uuid())
+  supplierId  String   @map("supplier_id")
+  branchId    String   @map("branch_id")
+  /// PURCHASE | PAYMENT | DEBT | CREDIT_NOTE | RETURN
+  type        String
+  amount      Float
+  description String
+  /// Transaction date (e.g., invoice date, payment date)
+  date        DateTime
+  userId      String?  @map("user_id") /// User who recorded/approved the transaction
+  reference   String?  @default("") /// Invoice/PO number, etc.
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  branch   Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  user     User?    @relation("SupplierTransactions", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([supplierId])
+  @@index([branchId])
+  @@index([type])
+  @@index([date])
+  @@map("supplier_transactions")
 }
